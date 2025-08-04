@@ -1,0 +1,26 @@
+/* Main application styles */
+.App {
+  text-align: center;
+}
+
+/* TODO: Implement application-wide styles */
+
+/* Loading states */
+.loading-spinner {
+  /* TODO: Implement spinner styles */
+}
+
+/* Button styles */
+.btn {
+  /* TODO: Implement button styles */
+}
+
+/* Form styles */
+.staking-form {
+  /* TODO: Implement form styles */
+}
+
+/* Card styles */
+.balance-card {
+  /* TODO: Implement card styles */
+}
