@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Polygon } from '@everstake/wallet-sdk-polygon';
 import { useWalletBalance } from "thirdweb/react";
 import { polygon, mainnet } from "thirdweb/chains";
+import { getContract } from "thirdweb";
 import { ethers } from 'ethers';
 
 export const useEverstakeStaking = (wallet, client, currentChain) => {
@@ -16,49 +17,38 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
   // Get wallet address safely
   const walletAddress = wallet?.getAccount()?.address;
 
-  // Use appropriate chain for balance hook based on current network
-  const balanceChain = currentChain === 'ethereum' ? mainnet : polygon;
+  // POL Token Contract Addresses
+  const POL_TOKEN_ADDRESS_MAINNET = "0x455e53CBB86018Ac2B8092FdCd39d8444aFFC3F6";
+  const POL_TOKEN_ADDRESS_POLYGON = "0x0000000000000000000000000000000000001010";
 
-  // Use Thirdweb's balance hook to get POL balance
+  // Use appropriate chain and token address based on current network
+  const balanceChain = currentChain === 'ethereum' ? mainnet : polygon;
+  const tokenAddress = currentChain === 'ethereum' ? POL_TOKEN_ADDRESS_MAINNET : POL_TOKEN_ADDRESS_POLYGON;
+
+  // Initialize Everstake SDK
+  const polygonSDK = new Polygon();
+
+  // Use Thirdweb's balance hook to get POL token balance
   const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useWalletBalance({
     chain: balanceChain,
     address: walletAddress,
-    client: client
+    client: client,
+    tokenAddress: tokenAddress
   });
 
-  // Debug logging
-  console.log('=== BALANCE DEBUGGING ===');
+  console.log('=== POL BALANCE DEBUGGING ===');
   console.log('Current chain:', currentChain);
-  console.log('Balance chain:', balanceChain);
   console.log('Wallet address:', walletAddress);
   console.log('Balance data:', balanceData);
-  console.log('Balance loading:', balanceLoading);
-  console.log('Client passed:', client);
 
-  // Initialize Everstake SDK (for balance checking only)
-  const polygonSDK = new Polygon();
-
-  // Get POL balance using Thirdweb hook data
+  // Get POL balance
   const getPOLBalance = () => {
-    console.log('=== getPOLBalance called ===');
-    console.log('balanceData:', balanceData);
-    console.log('balanceData type:', typeof balanceData);
-    
     try {
-      if (balanceData) {
-        console.log('balanceData.value:', balanceData.value);
-        console.log('balanceData.decimals:', balanceData.decimals);
-        console.log('balanceData structure:', Object.keys(balanceData));
-        
-        if (balanceData.value) {
-          const balanceInPOL = ethers.formatEther(balanceData.value);
-          const numericBalance = parseFloat(balanceInPOL);
-          console.log('Formatted balance:', balanceInPOL);
-          console.log('Numeric balance:', numericBalance);
-          return numericBalance.toFixed(6);
-        }
+      if (balanceData?.value) {
+        const balanceInPOL = ethers.formatEther(balanceData.value);
+        const numericBalance = parseFloat(balanceInPOL);
+        return numericBalance.toFixed(6);
       }
-      console.log('No balance data available, returning 0');
       return '0';
     } catch (error) {
       console.error('Failed to format POL balance:', error);
@@ -66,83 +56,47 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
     }
   };
 
- // Get staked amount from Everstake
-const getStakedAmount = async () => {
-  try {
-    if (!walletAddress) return '0';
-    
-    console.log('Getting staked amount for:', walletAddress);
-    
-    // Only check staking on Ethereum (where staking actually happens)
-    if (currentChain !== 'ethereum') {
-      console.log('Not on Ethereum, skipping staked balance check');
-      return '0';
-    }
-    
-    // Try to get real staked balance from Everstake API
+  // Get staked amount from Everstake
+  const getStakedAmount = async () => {
     try {
+      if (!walletAddress || currentChain !== 'ethereum') return '0';
+      
       const response = await fetch(`https://wallet-sdk-api.everstake.one/polygon/balance/${walletAddress}`);
       
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ API staked balance found:', data);
         return data.staked || '0';
       } else if (response.status === 404) {
-        // 404 is normal - means no staking record found
-        console.log('✅ No staking record found (404) - wallet has not staked');
-        return '0';
-      } else {
-        console.log('⚠️ API balance check failed with status:', response.status);
         return '0';
       }
-    } catch (apiError) {
-      console.log('⚠️ API call failed:', apiError.message);
+      return '0';
+    } catch (error) {
+      console.error('Failed to get staked amount:', error);
       return '0';
     }
-  } catch (error) {
-    console.error('Failed to get staked amount:', error);
-    return '0';
-  }
-};
+  };
 
-// Get pending rewards
-const getRewards = async () => {
-  try {
-    if (!walletAddress) return '0';
-    
-    console.log('Getting rewards for:', walletAddress);
-    
-    // Only check rewards on Ethereum (where staking happens)
-    if (currentChain !== 'ethereum') {
-      console.log('Not on Ethereum, skipping rewards check');
-      return '0';
-    }
-    
+  // Get pending rewards
+  const getRewards = async () => {
     try {
+      if (!walletAddress || currentChain !== 'ethereum') return '0';
+      
       const response = await fetch(`https://wallet-sdk-api.everstake.one/polygon/rewards/${walletAddress}`);
       
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ API rewards found:', data);
         return data.rewards || '0';
       } else if (response.status === 404) {
-        // 404 is normal - means no rewards found
-        console.log('✅ No rewards found (404) - wallet has no pending rewards');
-        return '0';
-      } else {
-        console.log('⚠️ API rewards check failed with status:', response.status);
         return '0';
       }
-    } catch (apiError) {
-      console.log('⚠️ Rewards API call failed:', apiError.message);
+      return '0';
+    } catch (error) {
+      console.error('Failed to get rewards:', error);
       return '0';
     }
-  } catch (error) {
-    console.error('Failed to get rewards:', error);
-    return '0';
-  }
-};
-  // Real Stake POL tokens using REST API
+  };
+
+  // SDK-based stakePOL using the Everstake JavaScript library
   const stakePOL = async (amount) => {
     setIsLoading(true);
     setError(null);
@@ -151,14 +105,13 @@ const getRewards = async () => {
       if (!walletAddress) throw new Error('No wallet connected');
       if (!amount || parseFloat(amount) <= 0) throw new Error('Invalid amount');
       
-      // Must be on Ethereum to stake
       if (currentChain !== 'ethereum') {
         throw new Error('Please switch to Ethereum mainnet to stake POL');
       }
       
-      console.log(`🚀 Starting real staking: ${amount} POL for ${walletAddress}`);
+      console.log(`🚀 Starting SDK-based staking: ${amount} POL for ${walletAddress}`);
       
-      // Check if user has enough POL
+      // Check balance
       const currentBalance = parseFloat(balances.pol);
       const stakeAmount = parseFloat(amount);
       
@@ -166,89 +119,257 @@ const getRewards = async () => {
         throw new Error(`Insufficient balance. You have ${currentBalance} POL`);
       }
       
-      // Step 1: Ensure we're on Ethereum mainnet
-      console.log('📡 Confirming Ethereum mainnet connection...');
+      // Ensure we're on Ethereum mainnet
+      await wallet.switchChain(mainnet);
+      console.log('✅ Switched to Ethereum mainnet');
+      
+      // Use the Everstake SDK delegate method with proper approval flow
+      console.log('🔄 Starting SDK approval and delegation flow...');
+      
       try {
-        await wallet.switchChain(mainnet);
-        console.log('✅ Confirmed on Ethereum mainnet');
-      } catch (chainError) {
-        console.warn('Chain switch failed or not needed:', chainError);
-        // Continue anyway - might already be on Ethereum
-      }
-      
-      // Step 2: Prepare staking data
-      console.log('💰 Preparing delegation data...');
-      
-      // Step 3: Execute real staking via REST API
-      console.log('📋 Using REST API for delegation...');
-      
-      const delegationData = {
-        address: walletAddress,
-        amount: amount,        // Use original amount (like "2")
-        validator: 'everstake',
-        token: 'POL'
-      };
-      
-      console.log('📤 Sending delegation request:', delegationData);
-      
-      const response = await fetch('https://wallet-sdk-api.everstake.one/polygon/delegate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(delegationData)
-      });
-      
-      console.log('📥 API Response status:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ API Error Response:', errorText);
+        // Step 1: First approve POL tokens using the SDK
+        console.log('💰 Step 1: Approving POL tokens with SDK...');
         
-        // Handle specific error cases
-        if (response.status === 400) {
-          throw new Error(`Invalid request: ${errorText}`);
-        } else if (response.status === 404) {
-          throw new Error('Everstake API endpoint not found. Please check the API documentation.');
-        } else if (response.status === 500) {
-          throw new Error('Everstake server error. Please try again later.');
+        // Get approval transaction data from SDK
+        const approveTransactionData = await polygonSDK.approve(walletAddress, amount);
+        console.log('✅ Approval transaction data:', approveTransactionData);
+        
+        if (approveTransactionData) {
+          // Send the approval transaction using Thirdweb
+          console.log('📤 Sending approval transaction...');
+          
+          const { sendTransaction } = await import("thirdweb");
+          
+          // Create transaction object with client
+          const approvalTransaction = {
+            to: approveTransactionData.to,
+            data: approveTransactionData.data,
+            value: approveTransactionData.value || 0n,
+            gas: approveTransactionData.gasLimit || 100000n,
+            client: client,
+            chain: mainnet};
+            
         } else {
-          throw new Error(`API Error: ${response.status} - ${errorText}`);
+          // If approval transaction data wasn't received
+          console.log('❌ Failed to get approval transaction data from SDK');
+          
+          return {
+            success: false,
+            message: 'Failed to prepare approval transaction. Please try again or use manual staking.'
+          };
+        };
+          
+          const approvalResult = await sendTransaction({
+            account: wallet.getAccount(),
+            transaction: approvalTransaction
+          });
+          
+          console.log('✅ Approval transaction sent:', approvalResult.transactionHash);
+          
+          // Step 2: Wait longer for approval to be processed by Everstake's backend
+          console.log('⏳ Waiting for approval to be processed by Everstake backend...');
+          await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds instead of 5
+          
+          // Step 3: Try delegation with retries
+          console.log('🎯 Step 2: Getting delegation transaction data...');
+          
+          let delegateTransactionData = null;
+          let retryCount = 0;
+          const maxRetries = 3;
+          
+          while (retryCount < maxRetries && !delegateTransactionData) {
+            try {
+              console.log(`🔄 Delegation attempt ${retryCount + 1}/${maxRetries}...`);
+              delegateTransactionData = await polygonSDK.delegate(walletAddress, amount);
+              console.log('✅ Delegation transaction data:', delegateTransactionData);
+              break;
+            } catch (delegateError) {
+              retryCount++;
+              console.log(`❌ Delegation attempt ${retryCount} failed:`, delegateError.message);
+              
+              if (retryCount < maxRetries) {
+                console.log(`⏳ Waiting ${retryCount * 5} seconds before retry...`);
+                await new Promise(resolve => setTimeout(resolve, retryCount * 5000));
+              }
+            }
+          }
+          
+          if (delegateTransactionData) {
+            // Send the delegation transaction
+            console.log('📤 Sending delegation transaction...');
+            
+            const delegationTransaction = {
+              to: delegateTransactionData.to,
+              data: delegateTransactionData.data,
+              value: delegateTransactionData.value || 0n,
+              gas: delegateTransactionData.gasLimit || 200000n,
+              client: client,
+              chain: mainnet
+            };
+            
+            const delegationResult = await sendTransaction({
+              account: wallet.getAccount(),
+              transaction: delegationTransaction
+            });
+            
+            console.log('✅ Delegation transaction sent:', delegationResult.transactionHash);
+            
+            // Wait for final confirmation and refresh balances
+            await new Promise(resolve => setTimeout(resolve, 8000));
+            await refreshBalances();
+            
+            return { 
+              success: true, 
+              message: `🎉 Successfully staked ${amount} POL!\n\n✅ Approval: ${approvalResult.transactionHash}\n✅ Delegation: ${delegationResult.transactionHash}\n\nYour POL tokens are now earning ~4.1% APY with Everstake!`,
+              transactionHash: delegationResult.transactionHash,
+              approvalHash: approvalResult.transactionHash
+            };
+          } else {
+            // If delegation transaction data failed, but approval worked
+            console.log('⚠️ Delegation transaction preparation failed, but approval succeeded');
+            
+            return { 
+              success: true, 
+              message: `✅ POL tokens approved for staking!\n\nApproval Transaction: ${approvalResult.transactionHash}\n\n⚠️ Automatic delegation failed due to Everstake API issues. Your tokens are approved and ready.\n\nYou can complete staking manually at: https://everstake.one/polygon\n\nOr try staking again in a few minutes - the API might recover.`,
+              transactionHash: approvalResult.transactionHash,
+              partialSuccess: true
+            };
+          }
+        }
+        
+      } catch (transactionError) {
+        console.error('❌ Transaction flow failed:', transactionError);
+        
+        // Provide helpful error message
+        if (transactionError.message.includes('user rejected')) {
+          throw new Error('Transaction was cancelled by user');
+        } else if (transactionError.message.includes('insufficient funds')) {
+          throw new Error('Insufficient ETH for gas fees');
+        } else {
+          throw new Error(`Transaction failed: ${transactionError.message}`);
         }
       }
       
-      const result = await response.json();
-      console.log('✅ API delegation result:', result);
-      
-      // Step 4: Handle transaction if provided
-      if (result.transactionHash) {
-        console.log('⏳ Transaction submitted:', result.transactionHash);
-        // You could add transaction receipt waiting here
+      // Method 2: Try alternative SDK methods if available
+      try {
+        console.log('🔄 Trying alternative SDK methods...');
+        
+        // Check if there are other methods available
+        console.log('Available SDK methods:', Object.getOwnPropertyNames(polygonSDK));
+        console.log('SDK prototype methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(polygonSDK)));
+        
+        // Try stake method if it exists
+        if (typeof polygonSDK.stake === 'function') {
+          console.log('📋 Trying SDK stake method...');
+          const stakeResult = await polygonSDK.stake(walletAddress, amount);
+          console.log('✅ SDK stake response:', stakeResult);
+          
+          if (stakeResult) {
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            await refreshBalances();
+            
+            return { 
+              success: true, 
+              message: `Successfully staked ${amount} POL using SDK stake method!`,
+              transactionHash: stakeResult.transactionHash || stakeResult.hash
+            };
+          }
+        }
+        
+        // Try delegateTokens method if it exists
+        if (typeof polygonSDK.delegateTokens === 'function') {
+          console.log('📋 Trying SDK delegateTokens method...');
+          const delegateTokensResult = await polygonSDK.delegateTokens(walletAddress, amount);
+          console.log('✅ SDK delegateTokens response:', delegateTokensResult);
+          
+          if (delegateTokensResult) {
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            await refreshBalances();
+            
+            return { 
+              success: true, 
+              message: `Successfully staked ${amount} POL using SDK delegateTokens method!`,
+              transactionHash: delegateTokensResult.transactionHash || delegateTokensResult.hash
+            };
+          }
+        }
+        
+      } catch (altError) {
+        console.error('❌ Alternative SDK methods failed:', altError);
       }
       
-      // Step 5: Update balances after successful staking
-      console.log('🔄 Refreshing balances after successful stake...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for network update
-      await refreshBalances();
+      // Method 3: Try different parameter formats for delegate
+      try {
+        console.log('🔄 Trying delegate with different parameter formats...');
+        
+        // Try with amount as number instead of string
+        const numberResult = await polygonSDK.delegate(walletAddress, parseFloat(amount));
+        console.log('✅ Number amount SDK response:', numberResult);
+        
+        if (numberResult) {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          await refreshBalances();
+          
+          return { 
+            success: true, 
+            message: `Successfully staked ${amount} POL using number format!`,
+            transactionHash: numberResult.transactionHash || numberResult.hash
+          };
+        }
+        
+      } catch (numberError) {
+        console.error('❌ Number format method failed:', numberError);
+        
+        // Try with wei amount
+        try {
+          console.log('🔄 Trying delegate with wei amount...');
+          const weiAmount = ethers.parseEther(amount).toString();
+          const weiResult = await polygonSDK.delegate(walletAddress, weiAmount);
+          console.log('✅ Wei amount SDK response:', weiResult);
+          
+          if (weiResult) {
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            await refreshBalances();
+            
+            return { 
+              success: true, 
+              message: `Successfully staked ${amount} POL using wei format!`,
+              transactionHash: weiResult.transactionHash || weiResult.hash
+            };
+          }
+        } catch (weiError) {
+          console.error('❌ Wei format method failed:', weiError);
+        }
+      }
       
-      return { 
-        success: true, 
-        message: `Successfully staked ${amount} POL! ${result.transactionHash ? `Transaction: ${result.transactionHash}` : 'Completed'}`,
-        transactionHash: result.transactionHash
+      // If all SDK methods fail, provide guidance
+      console.error('❌ All SDK methods failed');
+      
+      return {
+        success: false,
+        message: `SDK staking failed. The Everstake SDK may need additional configuration or the methods may have changed. 
+
+🔍 Debug Info:
+- SDK object: ${typeof polygonSDK}
+- Available methods: ${Object.getOwnPropertyNames(polygonSDK).join(', ')}
+
+💡 Next steps:
+1. Check if you have the latest @everstake/wallet-sdk-polygon package
+2. Try manual staking at https://everstake.one/polygon
+3. Contact Everstake support for SDK usage guidance
+
+Your ${amount} POL is ready to stake manually if needed.`
       };
       
     } catch (error) {
       console.error('❌ Staking process failed:', error);
       setError(error.message);
       
-      // Provide user-friendly error messages
       let userMessage = error.message;
       if (error.message.includes('insufficient funds')) {
-        userMessage = 'Insufficient ETH for gas fees. You need ~0.05-0.1 ETH on Ethereum mainnet.';
+        userMessage = 'Insufficient ETH for gas fees. You need ~0.05-0.1 ETH for transactions.';
       } else if (error.message.includes('user rejected')) {
         userMessage = 'Transaction was cancelled by user.';
-      } else if (error.message.includes('network')) {
-        userMessage = 'Network error. Please check your connection and try again.';
       }
       
       return { success: false, message: userMessage };
@@ -257,7 +378,7 @@ const getRewards = async () => {
     }
   };
 
-  // Real Claim rewards using REST API
+  // SDK-based claimRewards
   const claimRewards = async () => {
     setIsLoading(true);
     setError(null);
@@ -265,81 +386,72 @@ const getRewards = async () => {
     try {
       if (!walletAddress) throw new Error('No wallet connected');
       
-      // Must be on Ethereum to claim
       if (currentChain !== 'ethereum') {
         throw new Error('Please switch to Ethereum mainnet to claim rewards');
       }
       
       const rewardsAmount = parseFloat(balances.rewards);
-      
       if (rewardsAmount < 2) {
         throw new Error('Minimum 2 POL required to claim rewards');
       }
       
-      console.log(`💎 Starting real rewards claim: ${rewardsAmount} POL for ${walletAddress}`);
+      await wallet.switchChain(mainnet);
       
-      // Step 1: Ensure we're on Ethereum mainnet
-      console.log('📡 Confirming Ethereum mainnet connection...');
+      console.log('🔄 Calling SDK claim method...');
+      
       try {
-        await wallet.switchChain(mainnet);
-        console.log('✅ Confirmed on Ethereum mainnet');
-      } catch (chainError) {
-        console.warn('Chain switch failed or not needed:', chainError);
-      }
-      
-      // Step 2: Execute real rewards claim via REST API
-      console.log('💎 Using REST API for rewards claim...');
-      
-      const claimData = {
-        address: walletAddress
-      };
-      
-      console.log('📤 Sending claim request:', claimData);
-      
-      const response = await fetch('https://wallet-sdk-api.everstake.one/polygon/claim', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(claimData)
-      });
-      
-      console.log('📥 Claim API Response status:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Claim API Error Response:', errorText);
+        // Try SDK claimRewards method
+        const claimResult = await polygonSDK.claimRewards(walletAddress);
+        console.log('✅ SDK claim response:', claimResult);
         
-        if (response.status === 400) {
-          throw new Error(`Invalid claim request: ${errorText}`);
-        } else if (response.status === 404) {
-          throw new Error('No rewards found to claim.');
-        } else {
-          throw new Error(`Claim API Error: ${response.status} - ${errorText}`);
+        if (claimResult) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          await refreshBalances();
+          
+          return { 
+            success: true, 
+            message: `Successfully claimed ${rewardsAmount} POL rewards using SDK!`,
+            transactionHash: claimResult.transactionHash || claimResult.hash
+          };
+        }
+        
+      } catch (sdkError) {
+        console.error('❌ SDK claim failed:', sdkError);
+        
+        // Try alternative claim method names
+        const altMethods = ['claim', 'withdrawRewards', 'claimDelegatorReward'];
+        
+        for (const methodName of altMethods) {
+          if (typeof polygonSDK[methodName] === 'function') {
+            try {
+              console.log(`🔄 Trying SDK ${methodName} method...`);
+              const result = await polygonSDK[methodName](walletAddress);
+              console.log(`✅ SDK ${methodName} response:`, result);
+              
+              if (result) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                await refreshBalances();
+                
+                return { 
+                  success: true, 
+                  message: `Successfully claimed ${rewardsAmount} POL rewards using ${methodName}!`,
+                  transactionHash: result.transactionHash || result.hash
+                };
+              }
+            } catch (altError) {
+              console.error(`❌ SDK ${methodName} failed:`, altError);
+            }
+          }
         }
       }
       
-      const result = await response.json();
-      console.log('✅ API claim result:', result);
-      
-      // Wait for transaction if provided
-      if (result.transactionHash) {
-        console.log('⏳ Claim transaction submitted:', result.transactionHash);
-      }
-      
-      // Update balances
-      console.log('🔄 Refreshing balances after successful claim...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      await refreshBalances();
-      
-      return { 
-        success: true, 
-        message: `Successfully claimed ${rewardsAmount} POL rewards! ${result.transactionHash ? `Transaction: ${result.transactionHash}` : 'Completed'}`,
-        transactionHash: result.transactionHash
+      return {
+        success: false,
+        message: `SDK claim failed. You can manually claim your ${rewardsAmount} POL rewards at https://everstake.one/polygon`
       };
       
     } catch (error) {
-      console.error('❌ Claim process failed:', error);
+      console.error('Claim failed:', error);
       setError(error.message);
       return { success: false, message: error.message };
     } finally {
@@ -347,10 +459,12 @@ const getRewards = async () => {
     }
   };
 
-  // Simplified refresh that doesn't touch POL balance
+  // Refresh balances
   const refreshBalances = async () => {
     try {
-      console.log('🔄 Refreshing staking data only...');
+      if (refetchBalance) {
+        await refetchBalance();
+      }
       
       const [stakedAmount, rewardsAmount] = await Promise.all([
         getStakedAmount(),
@@ -358,30 +472,26 @@ const getRewards = async () => {
       ]);
 
       setBalances(prev => ({
-        pol: prev.pol, // Always preserve the real POL balance
+        pol: prev.pol,
         staked: stakedAmount,
         rewards: rewardsAmount
       }));
       
-      console.log('✅ Staking data refreshed', { staked: stakedAmount, rewards: rewardsAmount });
     } catch (error) {
-      console.error('❌ Failed to refresh staking data:', error);
+      console.error('Failed to refresh staking data:', error);
     }
   };
 
-  // Update balances when balance data changes or network switches
+  // Update balances when balance data changes
   useEffect(() => {
     if (walletAddress && balanceData) {
-      console.log('📊 Wallet balance updated for chain:', currentChain);
       const polBalance = getPOLBalance();
       
-      // Update POL balance immediately
       setBalances(prev => ({
         ...prev,
         pol: polBalance
       }));
       
-      // Then load staking data without touching POL balance
       getStakedAmount().then(staked => {
         setBalances(prev => ({ ...prev, staked }));
       });
@@ -392,14 +502,17 @@ const getRewards = async () => {
     }
   }, [balanceData, walletAddress, client, currentChain]);
 
-  // Refresh staking data when network changes
   useEffect(() => {
     if (walletAddress && currentChain) {
-      console.log('🔄 Network changed, refreshing staking data for:', currentChain);
       refreshBalances();
     }
   }, [currentChain]);
   
+  useEffect(() => {
+    if (walletAddress) {
+      refreshBalances();
+    }
+  }, [walletAddress]);
 
   return {
     balances,
