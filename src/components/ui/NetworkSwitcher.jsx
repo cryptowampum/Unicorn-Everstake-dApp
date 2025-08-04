@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCw, AlertCircle } from 'lucide-react';
+import { RefreshCw, AlertCircle, ArrowLeftRight, Zap } from 'lucide-react';
 import { polygon, mainnet } from "thirdweb/chains";
 
 const NetworkSwitcher = ({ wallet, currentChain, isLoading }) => {
@@ -12,7 +12,9 @@ const NetworkSwitcher = ({ wallet, currentChain, isLoading }) => {
       chain: mainnet,
       color: '#627eea',
       icon: 'Ξ',
-      purpose: 'For POL staking'
+      purpose: 'For POL staking with Everstake',
+      recommended: true,
+      description: 'Stake POL and claim rewards'
     },
     {
       id: 'polygon',
@@ -20,7 +22,9 @@ const NetworkSwitcher = ({ wallet, currentChain, isLoading }) => {
       chain: polygon,
       color: '#8247e5',
       icon: '◈',
-      purpose: 'For POL balance'
+      purpose: 'Check POL balance',
+      recommended: false,
+      description: 'View native POL tokens'
     }
   ];
 
@@ -72,10 +76,9 @@ const NetworkSwitcher = ({ wallet, currentChain, isLoading }) => {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
         {networks.map((network) => {
           const isActive = network.id === currentChain;
-          const isRecommended = network.id === 'ethereum';
           
           return (
             <button
@@ -94,10 +97,11 @@ const NetworkSwitcher = ({ wallet, currentChain, isLoading }) => {
                 color: 'white',
                 cursor: isActive ? 'default' : 'pointer',
                 transition: 'all 0.2s',
-                position: 'relative'
+                position: 'relative',
+                textAlign: 'left'
               }}
             >
-              {isRecommended && (
+              {network.recommended && (
                 <div style={{
                   position: 'absolute',
                   top: '-8px',
@@ -129,31 +133,86 @@ const NetworkSwitcher = ({ wallet, currentChain, isLoading }) => {
                 )}
               </div>
               
-              <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
+              <div style={{ fontSize: '0.8rem', opacity: 0.8, marginBottom: '0.25rem' }}>
                 {network.purpose}
+              </div>
+              
+              <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>
+                {network.description}
               </div>
             </button>
           );
         })}
       </div>
 
+      {/* Network-specific notifications */}
       {currentChain === 'polygon' && (
         <div style={{
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           gap: '0.75rem',
-          marginTop: '1rem',
-          padding: '0.75rem',
+          padding: '1rem',
           background: 'rgba(249, 115, 22, 0.1)',
           border: '1px solid rgba(249, 115, 22, 0.3)',
-          borderRadius: '8px'
+          borderRadius: '8px',
+          marginBottom: '1rem'
         }}>
-          <AlertCircle size={16} color="#f97316" />
-          <span style={{ color: '#fed7aa', fontSize: '0.8rem' }}>
-            Switch to Ethereum to stake POL with Everstake
-          </span>
+          <AlertCircle size={16} color="#f97316" style={{ marginTop: '2px', flexShrink: 0 }} />
+          <div>
+            <div style={{ color: '#fed7aa', fontSize: '0.8rem', fontWeight: '600', marginBottom: '0.25rem' }}>
+              Ready to stake?
+            </div>
+            <div style={{ color: '#fdba74', fontSize: '0.8rem' }}>
+              Switch to Ethereum mainnet to stake POL with Everstake. You can view your POL balance here on Polygon.
+            </div>
+          </div>
         </div>
       )}
+
+      {currentChain === 'ethereum' && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '0.75rem',
+          padding: '1rem',
+          background: 'rgba(16, 185, 129, 0.1)',
+          border: '1px solid rgba(16, 185, 129, 0.3)',
+          borderRadius: '8px',
+          marginBottom: '1rem'
+        }}>
+          <Zap size={16} color="#10b981" style={{ marginTop: '2px', flexShrink: 0 }} />
+          <div>
+            <div style={{ color: '#a7f3d0', fontSize: '0.8rem', fontWeight: '600', marginBottom: '0.25rem' }}>
+              Ready for staking!
+            </div>
+            <div style={{ color: '#6ee7b7', fontSize: '0.8rem' }}>
+              You're on Ethereum mainnet. You can stake POL and claim rewards with Everstake here.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bridge Information */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '0.75rem',
+        padding: '1rem',
+        background: 'rgba(59, 130, 246, 0.1)',
+        border: '1px solid rgba(59, 130, 246, 0.3)',
+        borderRadius: '8px'
+      }}>
+        <ArrowLeftRight size={16} color="#3b82f6" style={{ marginTop: '2px', flexShrink: 0 }} />
+        <div>
+          <div style={{ color: '#93c5fd', fontSize: '0.8rem', fontWeight: '600', marginBottom: '0.25rem' }}>
+            Need to bridge POL?
+          </div>
+          <div style={{ color: '#bfdbfe', fontSize: '0.8rem' }}>
+            If you have POL on Polygon but need it on Ethereum for staking, you can use the official 
+            Polygon bridge or other bridge services.
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

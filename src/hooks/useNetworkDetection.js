@@ -8,7 +8,11 @@ export const useNetworkDetection = (wallet) => {
   // Detect current network
   useEffect(() => {
     const detectNetwork = async () => {
-      if (!wallet) return;
+      if (!wallet) {
+        console.log('No wallet, defaulting to ethereum');
+        setCurrentChain('ethereum');
+        return;
+      }
 
       try {
         setIsLoading(true);
@@ -22,13 +26,18 @@ export const useNetworkDetection = (wallet) => {
           
           // Map chain ID to our network names
           if (chainId === 1 || chainId === mainnet.id) {
+            console.log('Setting current chain to ethereum');
             setCurrentChain('ethereum');
           } else if (chainId === 137 || chainId === polygon.id) {
+            console.log('Setting current chain to polygon');
             setCurrentChain('polygon');
           } else {
-            console.warn('Unknown chain ID:', chainId);
+            console.warn('Unknown chain ID:', chainId, 'defaulting to ethereum');
             setCurrentChain('ethereum'); // Default to ethereum
           }
+        } else {
+          console.log('No chain info found, defaulting to ethereum');
+          setCurrentChain('ethereum');
         }
       } catch (error) {
         console.error('Failed to detect network:', error);
@@ -41,23 +50,46 @@ export const useNetworkDetection = (wallet) => {
     detectNetwork();
 
     // Listen for network changes if wallet supports it
-    if (wallet && wallet.watchChain) {
-      const unsubscribe = wallet.watchChain((chain) => {
-        console.log('Network changed to:', chain);
-        if (chain.id === 1) {
-          setCurrentChain('ethereum');
-        } else if (chain.id === 137) {
-          setCurrentChain('polygon');
-        }
-      });
+    if (wallet) {
+      // Set up a polling mechanism to detect chain changes
+      const pollInterval = setInterval(() => {
+        detectNetwork();
+      }, 2000); // Check every 2 seconds
 
-      return () => unsubscribe?.();
+      return () => clearInterval(pollInterval);
     }
   }, [wallet]);
+
+  // Force refresh network detection
+  const refreshNetwork = async () => {
+    if (!wallet) return;
+    
+    try {
+      setIsLoading(true);
+      const account = wallet.getAccount();
+      if (account && account.chain) {
+        const chainId = account.chain.id || account.chain;
+        console.log('Force refresh - detected chain ID:', chainId);
+        
+        if (chainId === 1 || chainId === mainnet.id) {
+          setCurrentChain('ethereum');
+        } else if (chainId === 137 || chainId === polygon.id) {
+          setCurrentChain('polygon');
+        } else {
+          setCurrentChain('ethereum');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to refresh network:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return {
     currentChain,
     isLoading,
-    setCurrentChain
+    setCurrentChain,
+    refreshNetwork
   };
 };
