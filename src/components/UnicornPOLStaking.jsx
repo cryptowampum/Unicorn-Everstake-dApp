@@ -15,13 +15,13 @@ const UnicornPOLStaking = ({ client }) => {
   const [statusMessage, setStatusMessage] = useState('');
 
   // Debug logging
-  console.log('=== MAIN COMPONENT DEBUG ===');
-  console.log('currentChain:', currentChain);
-  console.log('wallet connected:', !!wallet);
-  console.log('balances:', balances);
-  console.log('isLoading:', isLoading);
-  console.log('stakePOL function available:', typeof stakePOL);
-  console.log('claimRewards function available:', typeof claimRewards);
+  console.debug('=== MAIN COMPONENT DEBUG ===');
+  console.debug('currentChain:', currentChain);
+  console.debug('wallet connected:', !!wallet);
+  console.debug('balances:', balances);
+  console.debug('isLoading:', isLoading);
+  console.debug('stakePOL function available:', typeof stakePOL);
+  console.debug('claimRewards function available:', typeof claimRewards);
 
   // Configure Unicorn smart account wallets - DEFAULT TO MAINNET for POL staking
   const wallets = [
