@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@everstake/wallet-sdk": "^1.0.15",
-    "@everstake/wallet-sdk-ethereum": "^1.0.3",
-    "ethers": "^6.15.0",
+    "@everstake/wallet-sdk": "^1.0.5",
+    "@everstake/wallet-sdk-polygon": "^1.1.0",
+    "@thirdweb-dev/react": "^3.16.5",
+    "ethers": "^5.8.0",
     "lucide-react": "^0.263.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

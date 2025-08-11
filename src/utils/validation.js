@@ -1,5 +1,5 @@
 // Input validation utilities
-import { ethers } from 'ethers';
+import { parseEther, isAddress } from 'ethers';
 
 export const validateStakeAmount = (amount, maxAmount, minAmount = '0') => {
   const errors = [];

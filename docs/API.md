@@ -48,7 +48,7 @@ const wallets = [
   inAppWallet({
     smartAccount: {
       factoryAddress: "0xD771615c873ba5a2149D5312448cE01D677Ee48A",
-      chain: polygon,
+      chain: ethereum,
       gasless: true,
     }
   })
