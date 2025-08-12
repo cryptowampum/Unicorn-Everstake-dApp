@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Polygon } from '@everstake/wallet-sdk-polygon';
 import { CreateToken } from '@everstake/wallet-sdk';
 import { useWalletBalance, useSendTransaction } from "thirdweb/react";
+import { prepareTransaction } from "thirdweb";
 import { polygon, mainnet } from "thirdweb/chains";
 import { ethers } from 'ethers';
 
@@ -33,12 +34,31 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
     tokenAddress: polTokenAddress
   });
 
- 
+
+
   // Initialize Everstake SDK
   const polygonSDK = new Polygon();
 
   // Use Thirdweb's transaction hook
   const { mutate: sendTransaction, data: txResult, error: txError, isPending: txPending } = useSendTransaction();
+
+  // Debug transaction errors
+  useEffect(() => {
+    if (txError) {
+      console.error('🚨 Thirdweb transaction error:', txError);
+      console.error('Error details:', txError.message);
+      console.error('Error stack:', txError.stack);
+    }
+  }, [txError]);
+
+  // Debug transaction results
+  useEffect(() => {
+    if (txResult) {
+      console.log('✅ Thirdweb transaction result:', txResult);
+      console.log('Transaction hash:', txResult.transactionHash);
+      console.log('Result structure:', Object.keys(txResult));
+    }
+  }, [txResult]);
 
   // Utility function to create auth tokens
   const createAuthToken = async () => {
@@ -94,7 +114,7 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
     }
   };
 
-  // Get staked amount from Everstake
+  // Get staked amount using SDK (not REST API)
   const getStakedAmount = async () => {
     try {
       if (!walletAddress) return '0';
@@ -107,24 +127,19 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
         return '0';
       }
       
-      // Try to get real staked balance from Everstake API
+      // Use SDK method instead of REST API
       try {
-        const response = await fetch(`https://wallet-sdk-api.everstake.one/polygon/balance/${walletAddress}`);
+        console.log('📋 Using SDK getTotalDelegate method...');
+        const delegateBalance = await polygonSDK.getTotalDelegate(walletAddress);
+        console.log('✅ SDK delegate balance found:', delegateBalance);
         
-        if (response.ok) {
-          const data = await response.json();
-          console.log('✅ API staked balance found:', data);
-          return data.staked || '0';
-        } else if (response.status === 404) {
-          // 404 is normal - means no staking record found
-          console.log('✅ No staking record found (404) - wallet has not staked');
-          return '0';
-        } else {
-          console.log('⚠️ API balance check failed with status:', response.status);
-          return '0';
-        }
-      } catch (apiError) {
-        console.log('⚠️ API call failed:', apiError.message);
+        // Convert BigNumber to string
+        const balanceString = delegateBalance.toString();
+        console.log('✅ Staked balance as string:', balanceString);
+        return balanceString;
+        
+      } catch (sdkError) {
+        console.log('⚠️ SDK getTotalDelegate call failed:', sdkError.message);
         return '0';
       }
     } catch (error) {
@@ -133,7 +148,7 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
     }
   };
 
-  // Get pending rewards
+  // Get pending rewards using SDK (not REST API)
   const getRewards = async () => {
     try {
       if (!walletAddress) return '0';
@@ -146,23 +161,19 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
         return '0';
       }
       
+      // Use SDK method instead of REST API
       try {
-        const response = await fetch(`https://wallet-sdk-api.everstake.one/polygon/rewards/${walletAddress}`);
+        console.log('📋 Using SDK getReward method...');
+        const rewardBalance = await polygonSDK.getReward(walletAddress);
+        console.log('✅ SDK reward balance found:', rewardBalance);
         
-        if (response.ok) {
-          const data = await response.json();
-          console.log('✅ API rewards found:', data);
-          return data.rewards || '0';
-        } else if (response.status === 404) {
-          // 404 is normal - means no rewards found
-          console.log('✅ No rewards found (404) - wallet has no pending rewards');
-          return '0';
-        } else {
-          console.log('⚠️ API rewards check failed with status:', response.status);
-          return '0';
-        }
-      } catch (apiError) {
-        console.log('⚠️ Rewards API call failed:', apiError.message);
+        // Convert BigNumber to string
+        const rewardString = rewardBalance.toString();
+        console.log('✅ Rewards balance as string:', rewardString);
+        return rewardString;
+        
+      } catch (sdkError) {
+        console.log('⚠️ SDK getReward call failed:', sdkError.message);
         return '0';
       }
     } catch (error) {
@@ -224,13 +235,64 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
         console.log('✅ Already approved, proceeding to delegation...');
       } else {
         // approvalResult is a transaction object that needs to be sent
-        console.log('📝 Sending approval transaction...');
-        sendTransaction(approvalResult);
+        console.log('📝 Converting Everstake approval to Thirdweb transaction...');
+        console.log('🔍 Approval transaction structure:', approvalResult);
         
-        // Wait for approval transaction to complete
-        console.log('⏳ Waiting for approval to complete...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        console.log('✅ Approval transaction completed');
+        try {
+          // Convert Everstake transaction to Thirdweb format
+          const thirdwebApprovalTx = prepareTransaction({
+            to: approvalResult.to,
+            data: approvalResult.data,
+            gas: approvalResult.gasLimit,
+            value: approvalResult.value || 0n,
+            chain: mainnet,
+            client: client
+          });
+          
+          console.log('✅ Thirdweb approval transaction prepared:', thirdwebApprovalTx);
+          console.log('📤 Sending via Thirdweb useSendTransaction...');
+          
+          // Send using Thirdweb hook
+          sendTransaction(thirdwebApprovalTx);
+          
+          // Wait for transaction hash
+          console.log('⏳ Waiting for approval transaction hash...');
+          let approvalWaitAttempts = 0;
+          while (!txResult?.transactionHash && approvalWaitAttempts < 7) {
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            approvalWaitAttempts++;
+            console.log(`Waiting for approval tx hash... attempt ${approvalWaitAttempts}`);
+          }
+          
+          if (txResult?.transactionHash) {
+            console.log('✅ Approval transaction hash:', txResult.transactionHash);
+            
+            // Use SDK to wait for completion
+            console.log('⏳ Waiting for approval transaction to complete...');
+            let isLoading = true;
+            while (isLoading) {
+              try {
+                isLoading = await polygonSDK.isTransactionLoading(txResult.transactionHash);
+                if (isLoading) {
+                  console.log('⏳ Approval still processing...');
+                  await new Promise(resolve => setTimeout(resolve, 3000));
+                } else {
+                  console.log('✅ Approval transaction completed!');
+                }
+              } catch (loadingError) {
+                console.log('⚠️ Could not check loading status, assuming completed:', loadingError.message);
+                break;
+              }
+            }
+          } else {
+            console.log('⚠️ No approval transaction hash received, waiting 15 seconds...');
+            await new Promise(resolve => setTimeout(resolve, 15000));
+          }
+          
+        } catch (conversionError) {
+          console.error('❌ Failed to convert approval transaction:', conversionError);
+          throw new Error(`Approval conversion failed: ${conversionError.message}`);
+        }
       }
       
       // Step 2b: Now proceed with delegation
@@ -244,27 +306,87 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
       
       console.log('✅ SDK delegation transaction prepared:', stakingTxData);
       
-      // Step 3: Submit prepared transaction using Thirdweb hook
-      console.log('📝 Submitting prepared transaction via Thirdweb hook...');
+      // Step 3: Convert and submit delegation transaction (same as approval)
+      console.log('📝 Converting Everstake delegation to Thirdweb transaction...');
+      console.log('🔍 Delegation transaction structure:', stakingTxData);
       
-      // Use the hook's sendTransaction function
-      sendTransaction(stakingTxData);
-      
-      console.log('✅ Transaction submitted successfully');
-      
-      // Note: The actual transaction result will be available in txResult from the hook
-      // For now, we'll return success immediately and update balances
-      console.log('⏳ Waiting for network update...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      console.log('🔄 Refreshing balances after successful stake...');
-      await refreshBalances();
-      
-      return { 
-        success: true, 
-        message: `Successfully staked ${amount} POL! Transaction submitted.`,
-        transactionHash: txResult?.transactionHash || 'pending'
-      };
+      try {
+        // Convert Everstake delegation transaction to Thirdweb format
+        const thirdwebDelegationTx = prepareTransaction({
+          to: stakingTxData.to,
+          data: stakingTxData.data,
+          gas: stakingTxData.gasLimit,
+          value: stakingTxData.value || 0n,
+          chain: mainnet,
+          client: client
+        });
+        
+        console.log('✅ Thirdweb delegation transaction prepared:', thirdwebDelegationTx);
+        console.log('📤 Sending delegation via Thirdweb useSendTransaction...');
+        
+        // Send using Thirdweb hook (same as approval)
+        sendTransaction(thirdwebDelegationTx);
+        
+        // Wait for transaction hash (need to wait for new result after approval)
+        console.log('⏳ Waiting for delegation transaction hash...');
+        let delegationWaitAttempts = 0;
+        let delegationTxHash = null;
+        
+        // Wait for new transaction result
+        while (!delegationTxHash && delegationWaitAttempts < 30) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          if (txResult?.transactionHash) {
+            delegationTxHash = txResult.transactionHash;
+            console.log('✅ Delegation transaction hash:', delegationTxHash);
+            break;
+          }
+          delegationWaitAttempts++;
+          console.log(`Waiting for delegation tx hash... attempt ${delegationWaitAttempts}`);
+        }
+        
+        if (delegationTxHash) {
+          console.log('⏳ Waiting for delegation transaction to complete...');
+          
+          // Use SDK method to check transaction status
+          let isLoading = true;
+          let loadingAttempts = 0;
+          while (isLoading && loadingAttempts < 20) {
+            try {
+              isLoading = await polygonSDK.isTransactionLoading(delegationTxHash);
+              if (isLoading) {
+                console.log(`⏳ Delegation still processing... attempt ${loadingAttempts + 1}`);
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                loadingAttempts++;
+              } else {
+                console.log('✅ Delegation transaction completed!');
+              }
+            } catch (loadingError) {
+              console.log('⚠️ Could not check loading status, assuming completed:', loadingError.message);
+              break;
+            }
+          }
+          
+          console.log('🔄 Refreshing balances after confirmed delegation...');
+          await refreshBalances();
+          
+          return { 
+            success: true, 
+            message: `Successfully staked ${amount} POL! Transaction confirmed.`,
+            transactionHash: delegationTxHash
+          };
+          
+        } else {
+          console.log('❌ No delegation transaction hash received');
+          return { 
+            success: false, 
+            message: 'Delegation transaction failed - no transaction hash received'
+          };
+        }
+        
+      } catch (conversionError) {
+        console.error('❌ Failed to convert delegation transaction:', conversionError);
+        throw new Error(`Delegation conversion failed: ${conversionError.message}`);
+      }
       
     } catch (error) {
       console.error('❌ Staking process failed:', error);
