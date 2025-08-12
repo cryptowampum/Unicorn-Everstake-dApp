@@ -572,6 +572,133 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
     }
   };
 
+// Claim unstaked POL tokens (after unbonding period)
+  const claimUnstakedPOL = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      if (!walletAddress) throw new Error('No wallet connected');
+      
+      // Must be on Ethereum to claim unstaked
+      if (currentChain !== 'ethereum') {
+        throw new Error('Please switch to Ethereum mainnet to claim unstaked POL');
+      }
+      
+      const unbondingAmount = parseFloat(balances.unbonding);
+      
+      if (unbondingAmount <= 0) {
+        throw new Error('No unstaked POL available to claim');
+      }
+      
+      // Ensure we're on Ethereum mainnet
+      try {
+        await wallet.switchChain(mainnet);
+      } catch (chainError) {
+        console.warn('Chain switch failed or not needed:', chainError);
+      }
+      
+      // Prepare claim unstaked transaction using SDK
+      const claimUnstakedTxData = await polygonSDK.claimUndelegate(
+        walletAddress, // address: user's address
+        true          // isPOL: true for POL token
+      );
+      
+      // Convert to Thirdweb transaction
+      const thirdwebClaimUnstakedTx = prepareTransaction({
+        to: claimUnstakedTxData.to,
+        data: claimUnstakedTxData.data,
+        gas: claimUnstakedTxData.gasLimit,
+        value: claimUnstakedTxData.value || 0n,
+        chain: mainnet,
+        client: client
+      });
+      
+      // Send claim unstaked transaction
+      sendTransaction(thirdwebClaimUnstakedTx);
+      
+      // Wait for transaction hash
+      let claimUnstakedWaitAttempts = 0;
+      let claimUnstakedTxHash = null;
+      
+      while (!claimUnstakedTxHash && claimUnstakedWaitAttempts < 30) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (txResult?.transactionHash) {
+          claimUnstakedTxHash = txResult.transactionHash;
+          break;
+        }
+        claimUnstakedWaitAttempts++;
+      }
+      
+      if (claimUnstakedTxHash) {
+        // Wait for claim unstaked transaction to complete
+        let isLoading = true;
+        let loadingAttempts = 0;
+        while (isLoading && loadingAttempts < 20) {
+          try {
+            isLoading = await polygonSDK.isTransactionLoading(claimUnstakedTxHash);
+            if (isLoading) {
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              loadingAttempts++;
+            }
+          } catch (loadingError) {
+            break;
+          }
+        }
+        
+        // Refresh balances after claim
+        await refreshBalances();
+        
+        return { 
+          success: true, 
+          message: `Successfully claimed ${unbondingAmount} unstaked POL!`,
+          transactionHash: claimUnstakedTxHash
+        };
+      } else {
+        // Fallback: Check if claiming actually worked by checking balance changes
+        console.log('⚠️ No claim unstaked hash detected, checking if claiming succeeded via balance...');
+        
+        const originalUnbondingBalance = parseFloat(balances.unbonding);
+        
+        // Wait for blockchain to update
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        await refreshBalances();
+        
+        // Check if unbonding amount decreased
+        const newUnbondingBalance = await getUnbondAmount();
+        const newUnbondingNum = parseFloat(newUnbondingBalance);
+        
+        if (newUnbondingNum < originalUnbondingBalance) {
+          return { 
+            success: true, 
+            message: `Successfully claimed ${unbondingAmount} unstaked POL! (Transaction completed but hash not captured)`,
+            transactionHash: 'Transaction completed successfully'
+          };
+        } else {
+          return { 
+            success: false, 
+            message: 'Claim unstaked transaction failed - no balance changes detected'
+          };
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Claim unstaked process failed:', error);
+      setError(error.message);
+      
+      let userMessage = error.message;
+      if (error.message.includes('insufficient funds')) {
+        userMessage = 'Insufficient ETH for gas fees. You need ETH for transaction fees.';
+      } else if (error.message.includes('user rejected')) {
+        userMessage = 'Transaction was cancelled by user.';
+      }
+      
+      return { success: false, message: userMessage };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Refresh all balances
   const refreshBalances = async () => {
     try {
