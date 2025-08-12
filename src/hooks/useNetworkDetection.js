@@ -33,10 +33,10 @@ export const useNetworkDetection = (wallet) => {
             setCurrentChain('polygon');
           } else {
             console.warn('Unknown chain ID:', chainId, 'defaulting to ethereum');
-            setCurrentChain('ethereum'); // Default to ethereum
+ //           setCurrentChain('ethereum'); // Default to ethereum
           }
         } else {
-          console.log('No chain info found, defaulting to ethereum');
+//          console.log('No chain info found, defaulting to ethereum');
           setCurrentChain('ethereum');
         }
       } catch (error) {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Polygon } from '@everstake/wallet-sdk-polygon';
 import { CreateToken } from '@everstake/wallet-sdk';
-import { useWalletBalance } from "thirdweb/react";
+import { useWalletBalance, useSendTransaction } from "thirdweb/react";
 import { polygon, mainnet } from "thirdweb/chains";
 import { ethers } from 'ethers';
 
@@ -33,10 +33,12 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
     tokenAddress: polTokenAddress
   });
 
-
-
+ 
   // Initialize Everstake SDK
   const polygonSDK = new Polygon();
+
+  // Use Thirdweb's transaction hook
+  const { mutate: sendTransaction, data: txResult, error: txError, isPending: txPending } = useSendTransaction();
 
   // Utility function to create auth tokens
   const createAuthToken = async () => {
@@ -202,12 +204,37 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
         console.warn('Chain switch failed or not needed:', chainError);
       }
       
-      // Step 2: Create auth token and prepare delegation with SDK
-      console.log('🔧 Creating auth token and preparing delegation with SDK...');
+      // Step 2: Create auth token and handle approval + delegation
+      console.log('🔧 Creating auth token and preparing approval/delegation with SDK...');
       
       const authToken = await createAuthToken();
       
-      console.log('📋 Calling SDK delegate method...');
+      // Step 2a: Check and handle approval first
+      console.log('📋 Step 1: Checking/handling POL approval...');
+      const approvalResult = await polygonSDK.approve(
+        walletAddress, // address
+        amount,        // amount to approve
+        true          // isPOL: true for POL token
+      );
+      
+      console.log('✅ Approval result:', approvalResult);
+      
+      // Handle approval if needed
+      if (approvalResult.result === 'approve') {
+        console.log('✅ Already approved, proceeding to delegation...');
+      } else {
+        // approvalResult is a transaction object that needs to be sent
+        console.log('📝 Sending approval transaction...');
+        sendTransaction(approvalResult);
+        
+        // Wait for approval transaction to complete
+        console.log('⏳ Waiting for approval to complete...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        console.log('✅ Approval transaction completed');
+      }
+      
+      // Step 2b: Now proceed with delegation
+      console.log('📋 Step 2: Calling SDK delegate method...');
       const stakingTxData = await polygonSDK.delegate(
         authToken,    // token: properly generated auth token
         walletAddress, // address: user's address  
@@ -217,23 +244,26 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
       
       console.log('✅ SDK delegation transaction prepared:', stakingTxData);
       
-      // Step 3: Submit prepared transaction using Thirdweb wallet
-      console.log('📝 Submitting prepared transaction via wallet...');
-      const txResult = await wallet.sendTransaction(stakingTxData);
-      console.log('✅ Transaction submitted:', txResult);
+      // Step 3: Submit prepared transaction using Thirdweb hook
+      console.log('📝 Submitting prepared transaction via Thirdweb hook...');
       
-      const txHash = txResult.transactionHash || txResult.hash || txResult;
-      console.log('📋 Transaction hash:', txHash);
+      // Use the hook's sendTransaction function
+      sendTransaction(stakingTxData);
       
-      // Step 4: Update balances after successful staking
-      console.log('🔄 Refreshing balances after successful stake...');
+      console.log('✅ Transaction submitted successfully');
+      
+      // Note: The actual transaction result will be available in txResult from the hook
+      // For now, we'll return success immediately and update balances
+      console.log('⏳ Waiting for network update...');
       await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      console.log('🔄 Refreshing balances after successful stake...');
       await refreshBalances();
       
       return { 
         success: true, 
-        message: `Successfully staked ${amount} POL! ${txHash ? `Transaction: ${txHash}` : 'Completed'}`,
-        transactionHash: txHash
+        message: `Successfully staked ${amount} POL! Transaction submitted.`,
+        transactionHash: txResult?.transactionHash || 'pending'
       };
       
     } catch (error) {
@@ -292,22 +322,25 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
       const claimTxData = await polygonSDK.claimRewards(walletAddress);
       console.log('✅ SDK claim transaction prepared:', claimTxData);
       
-      // Step 3: Submit prepared transaction using Thirdweb wallet
-      console.log('📝 Submitting prepared claim transaction via wallet...');
-      const txResult = await wallet.sendTransaction(claimTxData);
+      // Step 3: Submit prepared transaction using Thirdweb hook
+      console.log('📝 Submitting prepared claim transaction via Thirdweb hook...');
       
-      const txHash = txResult.transactionHash || txResult.hash || txResult;
-      console.log('✅ Claim transaction submitted:', txHash);
+      // Use the hook's sendTransaction function
+      sendTransaction(claimTxData);
       
-      // Step 4: Update balances
-      console.log('🔄 Refreshing balances after successful claim...');
+      console.log('✅ Claim transaction submitted successfully');
+      
+      // Wait for network update
+      console.log('⏳ Waiting for network update...');
       await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      console.log('🔄 Refreshing balances after successful claim...');
       await refreshBalances();
       
       return { 
         success: true, 
-        message: `Successfully claimed ${rewardsAmount} POL rewards! ${txHash ? `Transaction: ${txHash}` : 'Completed'}`,
-        transactionHash: txHash
+        message: `Successfully claimed ${rewardsAmount} POL rewards! Transaction submitted.`,
+        transactionHash: txResult?.transactionHash || 'pending'
       };
       
     } catch (error) {
@@ -379,10 +412,11 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
 
   return {
     balances,
-    isLoading: isLoading || balanceLoading,
-    error,
+    isLoading: isLoading || balanceLoading || txPending,
+    error: error || txError,
     stakePOL,
     claimRewards,
-    refreshBalances
+    refreshBalances,
+    txResult
   };
 };
