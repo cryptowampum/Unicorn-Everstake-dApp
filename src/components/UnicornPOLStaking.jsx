@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { AutoConnect, useActiveWallet } from "thirdweb/react";
 import { inAppWallet } from "thirdweb/wallets";
 import { mainnet } from "thirdweb/chains";
-import { Wallet, TrendingUp, Zap, AlertCircle, RefreshCw, Send, Gift, DollarSign } from 'lucide-react';
+import { Wallet, TrendingUp, Zap, AlertCircle, RefreshCw, Send, Gift, DollarSign, Minus, Clock } from 'lucide-react';
 import { useEverstakeStaking } from '../hooks/useEverstakeStaking.jsx';
 import { useNetworkDetection } from '../hooks/useNetworkDetection.js';
 import ChainSwitchNotification from './ui/ChainSwitchNotification.jsx';
@@ -11,8 +11,10 @@ import NetworkSwitcher from './ui/NetworkSwitcher.jsx';
 const UnicornPOLStaking = ({ client }) => {
   const wallet = useActiveWallet();
   const { currentChain, isLoading: networkLoading } = useNetworkDetection(wallet);
-  const { balances, isLoading, error, stakePOL, claimRewards, refreshBalances } = useEverstakeStaking(wallet, client, currentChain);
+  // ADD unstaking functions to destructuring
+  const { balances, isLoading, error, stakePOL, unstakePOL, claimRewards, claimUnstakedPOL, refreshBalances } = useEverstakeStaking(wallet, client, currentChain);
   const [stakeAmount, setStakeAmount] = useState('');
+  const [unstakeAmount, setUnstakeAmount] = useState(''); // NEW: Add unstake amount state
   const [statusMessage, setStatusMessage] = useState('');
 
   // Configure Unicorn smart account wallets - DEFAULT TO MAINNET
@@ -54,6 +56,49 @@ const UnicornPOLStaking = ({ client }) => {
     setTimeout(() => setStatusMessage(''), 5000);
   };
 
+  // NEW: Add unstake handler
+  const handleUnstake = async () => {
+    console.log('🎯 handleUnstake called with amount:', unstakeAmount);
+    
+    if (!unstakeAmount || parseFloat(unstakeAmount) <= 0) {
+      console.log('❌ Invalid unstake amount');
+      setStatusMessage('Please enter a valid unstaking amount');
+      return;
+    }
+
+    if (currentChain !== 'ethereum') {
+      setStatusMessage('Please switch to Ethereum mainnet to unstake POL');
+      return;
+    }
+
+    console.log('✅ Calling unstakePOL...');
+    const result = await unstakePOL(unstakeAmount);
+    console.log('📋 unstakePOL result:', result);
+    
+    setStatusMessage(result.message);
+    
+    if (result.success) {
+      setUnstakeAmount('');
+    }
+    
+    // Clear message after 5 seconds
+    setTimeout(() => setStatusMessage(''), 5000);
+  };
+
+  // NEW: Add claim unstaked handler
+  const handleClaimUnstaked = async () => {
+    if (currentChain !== 'ethereum') {
+      setStatusMessage('Please switch to Ethereum mainnet to claim unstaked POL');
+      return;
+    }
+
+    const result = await claimUnstakedPOL();
+    setStatusMessage(result.message);
+    
+    // Clear message after 5 seconds
+    setTimeout(() => setStatusMessage(''), 5000);
+  };
+
   const handleClaimRewards = async () => {
     if (currentChain !== 'ethereum') {
       setStatusMessage('Please switch to Ethereum mainnet to claim rewards');
@@ -70,6 +115,11 @@ const UnicornPOLStaking = ({ client }) => {
   const handleMaxAmount = () => {
     const maxStakeAmount = Math.max(0, parseFloat(balances.pol) - 0.01); // Leave small buffer
     setStakeAmount(maxStakeAmount.toFixed(6));
+  };
+
+  // NEW: Add max unstake handler
+  const handleMaxUnstakeAmount = () => {
+    setUnstakeAmount(parseFloat(balances.staked).toFixed(6));
   };
 
   // Connection screen (when wallet not connected)
@@ -253,10 +303,10 @@ const UnicornPOLStaking = ({ client }) => {
           </div>
         )}
 
-        {/* Balance Cards */}
+        {/* Balance Cards - ADD Unbonding Card */}
         <div style={{ 
           display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
           gap: '1.5rem',
           marginBottom: '2rem'
         }}>
@@ -361,9 +411,45 @@ const UnicornPOLStaking = ({ client }) => {
               Updated every ~34 min
             </div>
           </div>
+
+          {/* NEW: Unbonding Card - Only show if there are unbonding tokens */}
+          {parseFloat(balances.unbonding || '0') > 0 && (
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              backdropFilter: 'blur(10px)',
+              borderRadius: '16px',
+              padding: '1.5rem',
+              border: '1px solid rgba(239, 68, 68, 0.3)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  borderRadius: '8px',
+                  padding: '0.5rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Clock size={20} color="white" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', opacity: 0.8 }}>Unbonding POL</h3>
+                  <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.6 }}>
+                    Available to claim
+                  </p>
+                </div>
+              </div>
+              <div style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                {isLoading ? '...' : `${parseFloat(balances.unbonding || '0').toFixed(4)} POL`}
+              </div>
+              <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>
+                Unbonding period completed
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Staking Actions */}
+        {/* Staking Actions - UPDATE to include unstaking */}
         <div style={{ 
           display: 'grid', 
           gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', 
@@ -481,6 +567,117 @@ const UnicornPOLStaking = ({ client }) => {
             </div>
           </div>
 
+          {/* NEW: Unstake POL Section */}
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.1)',
+            backdropFilter: 'blur(10px)',
+            borderRadius: '16px',
+            padding: '2rem',
+            border: '1px solid rgba(255, 255, 255, 0.2)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+              <Minus size={24} color="#ef4444" />
+              <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Unstake POL</h3>
+            </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '0.5rem', 
+                fontSize: '0.9rem', 
+                opacity: 0.8 
+              }}>
+                Amount to unstake
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="number"
+                  value={unstakeAmount}
+                  onChange={(e) => setUnstakeAmount(e.target.value)}
+                  placeholder="0.0"
+                  min="0"
+                  step="0.000001"
+                  style={{
+                    flex: 1,
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    padding: '0.75rem',
+                    color: 'white',
+                    fontSize: '1rem'
+                  }}
+                />
+                <button
+                  onClick={handleMaxUnstakeAmount}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1rem',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  MAX
+                </button>
+              </div>
+              <div style={{ fontSize: '0.8rem', opacity: 0.6, marginTop: '0.25rem' }}>
+                Staked: {parseFloat(balances.staked).toFixed(6)} POL
+              </div>
+            </div>
+
+            {currentChain !== 'ethereum' && <ChainSwitchNotification />}
+
+            <button
+              onClick={handleUnstake}
+              disabled={isLoading || !unstakeAmount || parseFloat(unstakeAmount) <= 0 || currentChain !== 'ethereum' || parseFloat(balances.staked) === 0}
+              style={{
+                width: '100%',
+                background: isLoading || currentChain !== 'ethereum' || parseFloat(balances.staked) === 0
+                  ? 'rgba(107, 114, 128, 0.5)'
+                  : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                border: 'none',
+                borderRadius: '12px',
+                padding: '1rem',
+                color: 'white',
+                fontSize: '1rem',
+                fontWeight: '600',
+                cursor: isLoading || currentChain !== 'ethereum' || parseFloat(balances.staked) === 0 ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem'
+              }}
+            >
+              {isLoading ? (
+                <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} />
+              ) : (
+                <Minus size={20} />
+              )}
+              {isLoading ? 'Unstaking...' : parseFloat(balances.staked) === 0 ? 'No POL Staked' : 'Unstake POL'}
+            </button>
+
+            <div style={{ 
+              marginTop: '1rem', 
+              padding: '1rem', 
+              background: 'rgba(239, 68, 68, 0.1)',
+              borderRadius: '8px',
+              fontSize: '0.8rem',
+              opacity: 0.8
+            }}>
+              <div style={{ marginBottom: '0.5rem' }}>
+                <strong>Important:</strong>
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '1rem' }}>
+                <li>Unstaking starts an unbonding period</li>
+                <li>Tokens will be available to claim after unbonding</li>
+                <li>No rewards earned during unbonding</li>
+                <li>Must be on Ethereum mainnet to unstake</li>
+              </ul>
+            </div>
+          </div>
+
           {/* Claim Rewards Section */}
           <div style={{
             background: 'rgba(255, 255, 255, 0.1)',
@@ -558,6 +755,86 @@ const UnicornPOLStaking = ({ client }) => {
               </ul>
             </div>
           </div>
+
+          {/* NEW: Claim Unstaked Section - Only show if there are unbonding tokens */}
+          {parseFloat(balances.unbonding || '0') > 0 && (
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              backdropFilter: 'blur(10px)',
+              borderRadius: '16px',
+              padding: '2rem',
+              border: '1px solid rgba(239, 68, 68, 0.3)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                <Clock size={24} color="#ef4444" />
+                <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Claim Unstaked POL</h3>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ 
+                  fontSize: '2rem', 
+                  fontWeight: 'bold', 
+                  marginBottom: '0.5rem',
+                  color: '#ef4444'
+                }}>
+                  {parseFloat(balances.unbonding || '0').toFixed(6)} POL
+                </div>
+                <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>
+                  Unbonded POL ready to claim
+                </div>
+              </div>
+
+              {currentChain !== 'ethereum' && <ChainSwitchNotification />}
+
+              <button
+                onClick={handleClaimUnstaked}
+                disabled={isLoading || parseFloat(balances.unbonding || '0') <= 0 || currentChain !== 'ethereum'}
+                style={{
+                  width: '100%',
+                  background: isLoading || parseFloat(balances.unbonding || '0') <= 0 || currentChain !== 'ethereum'
+                    ? 'rgba(107, 114, 128, 0.5)'
+                    : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '1rem',
+                  color: 'white',
+                  fontSize: '1rem',
+                  fontWeight: '600',
+                  cursor: isLoading || parseFloat(balances.unbonding || '0') <= 0 || currentChain !== 'ethereum' ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem'
+                }}
+              >
+                {isLoading ? (
+                  <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  <Clock size={20} />
+                )}
+                {isLoading ? 'Claiming...' : 'Claim Unstaked POL'}
+              </button>
+
+              <div style={{ 
+                marginTop: '1rem', 
+                padding: '1rem', 
+                background: 'rgba(239, 68, 68, 0.1)',
+                borderRadius: '8px',
+                fontSize: '0.8rem',
+                opacity: 0.8
+              }}>
+                <div style={{ marginBottom: '0.5rem' }}>
+                  <strong>Note:</strong>
+                </div>
+                <ul style={{ margin: 0, paddingLeft: '1rem' }}>
+                  <li>Unbonding period is complete</li>
+                  <li>Tokens are ready to claim to your wallet</li>
+                  <li>Must be on Ethereum mainnet to claim</li>
+                  <li>Gas fees covered by Unicorn smart account</li>
+                </ul>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Information Panel */}

@@ -125,29 +125,29 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
     }
   };
 
-  // Get unbonding (pending unstaking) amount using SDK
-  const getUnbondAmount = async () => {
-    try {
-      if (!walletAddress) return '0';
-      
-      // Only check unbonding on Ethereum (where staking happens)
-      if (currentChain !== 'ethereum') {
-        return '0';
-      }
-      
-      try {
-        const unbondBalance = await polygonSDK.getUnbond(walletAddress);
-        return unbondBalance.toString();
-      } catch (sdkError) {
-        console.log('⚠️ SDK getUnbond call failed:', sdkError.message);
-        return '0';
-      }
-    } catch (error) {
-      console.error('Failed to get unbond amount:', error);
+ const getUnbondAmount = async () => {
+  try {
+    if (!walletAddress) return '0';
+    
+    if (currentChain !== 'ethereum') {
       return '0';
     }
-  };
-
+    
+    try {
+      const unbondBalance = await polygonSDK.getUnbond(walletAddress);
+      console.log('🔍 DEBUG: getUnbond returned:', unbondBalance);
+      console.log('🔍 DEBUG: getUnbond type:', typeof unbondBalance);
+      console.log('🔍 DEBUG: getUnbond toString:', unbondBalance.toString());
+      return unbondBalance.toString();
+    } catch (sdkError) {
+      console.log('⚠️ SDK getUnbond call failed:', sdkError.message);
+      return '0';
+    }
+  } catch (error) {
+    console.error('Failed to get unbond amount:', error);
+    return '0';
+  }
+};
   // Main staking function using SDK + Thirdweb integration
   const stakePOL = async (amount) => {
     setIsLoading(true);
@@ -345,6 +345,8 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
   };
 
   // Unstake POL tokens (initiate unbonding period)
+ // Unstake POL tokens (initiate unbonding period) - CORRECTED function signature
+// Unstake POL tokens (initiate unbonding period) - Option 1: No auth token (per docs)
   const unstakePOL = async (amount) => {
     setIsLoading(true);
     setError(null);
@@ -373,12 +375,76 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
         console.warn('Chain switch failed or not needed:', chainError);
       }
       
-      // Prepare unstaking transaction using SDK
-      const unstakingTxData = await polygonSDK.undelegate(
+      // OPTION 1: Instance method without auth token (per documentation)
+      /* const unstakingTxData = await polygonSDK.undelegate(
         walletAddress, // address: user's address  
-        amount,       // amount: amount to unstake
+        amount,        // amount: amount to unstake
+        true           // isPOL: true for POL token
+      );
+      */
+      
+      // OPTION 2: If Option 1 fails, uncomment this block and comment out Option 1 above
+      
+      // Create auth token like in working staking code
+      const authToken = await createAuthToken();
+      
+      // Handle approval like in working staking code
+      const approvalResult = await polygonSDK.approve(
+        walletAddress, // address
+        amount,        // amount to approve
         true          // isPOL: true for POL token
       );
+      
+      // Handle approval if needed
+      if (approvalResult.result === 'approve') {
+        console.log('✅ Already approved, proceeding to undelegation...');
+      } else {
+        // Convert Everstake approval to Thirdweb transaction
+        const thirdwebApprovalTx = prepareTransaction({
+          to: approvalResult.to,
+          data: approvalResult.data,
+          gas: approvalResult.gasLimit,
+          value: approvalResult.value || 0n,
+          chain: mainnet,
+          client: client
+        });
+        
+        // Send approval transaction
+        sendTransaction(thirdwebApprovalTx);
+        
+        // Wait for approval transaction hash
+        let approvalWaitAttempts = 0;
+        while (!txResult?.transactionHash && approvalWaitAttempts < 30) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          approvalWaitAttempts++;
+        }
+        
+        if (txResult?.transactionHash) {
+          // Wait for approval transaction to complete
+          let isLoading = true;
+          while (isLoading) {
+            try {
+              isLoading = await polygonSDK.isTransactionLoading(txResult.transactionHash);
+              if (isLoading) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
+              }
+            } catch (loadingError) {
+              break;
+            }
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 15000));
+        }
+      }
+      
+      // Try with auth token (like working staking code)
+      const unstakingTxData = await polygonSDK.undelegate(
+        authToken,     // token: auth token like in staking
+        walletAddress, // address: user's address  
+        amount,        // amount: amount to unstake
+        true           // isPOL: true for POL token
+      );
+      
       
       // Convert Everstake unstaking to Thirdweb transaction
       const thirdwebUnstakingTx = prepareTransaction({
@@ -471,6 +537,158 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
         userMessage = 'Insufficient ETH for gas fees. You need ETH for transaction fees.';
       } else if (error.message.includes('user rejected')) {
         userMessage = 'Transaction was cancelled by user.';
+      } else if (error.message.includes('network')) {
+        userMessage = 'Network error. Please check your connection and try again.';
+      }
+      
+      return { success: false, message: userMessage };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Claim unstaked POL tokens (after unbonding period) - Option 1: No auth token (per docs)
+  const claimUnstakedPOL = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      if (!walletAddress) throw new Error('No wallet connected');
+      
+      // Must be on Ethereum to claim unstaked
+      if (currentChain !== 'ethereum') {
+        throw new Error('Please switch to Ethereum mainnet to claim unstaked POL');
+      }
+      
+      const unbondingAmount = parseFloat(balances.unbonding);
+      
+      if (unbondingAmount <= 0) {
+        throw new Error('No unstaked POL available to claim');
+      }
+      
+      // Ensure we're on Ethereum mainnet
+      try {
+        await wallet.switchChain(mainnet);
+      } catch (chainError) {
+        console.warn('Chain switch failed or not needed:', chainError);
+      }
+      
+      // OPTION 1: Instance methods without auth token (per documentation)
+       /*
+        const nonce = await polygonSDK.getUnbondNonces(walletAddress);
+      console.log('✅ Got unbond nonce:', nonce);
+    
+      const claimUnstakedTxData = await polygonSDK.claimUndelegate(
+        walletAddress, // address: user's address
+        nonce,         // nonce: required nonce from getUnbondNonces
+        true           // isPOL: true for POL token
+      );
+      */
+      // OPTION 2: If Option 1 fails, uncomment this block and comment out Option 1 above
+      
+      // Create auth token like in working code
+      const authToken = await createAuthToken();
+      
+      const nonce = await polygonSDK.getUnbondNonces(walletAddress);
+      console.log('✅ Got unbond nonce:', nonce);
+      
+      // Try with auth token (might need it like staking)
+      const claimUnstakedTxData = await polygonSDK.claimUndelegate(
+        authToken,     // token: auth token like in staking
+        walletAddress, // address: user's address
+        nonce,         // nonce: required nonce from getUnbondNonces
+        true           // isPOL: true for POL token
+      );
+      
+      
+      // Convert to Thirdweb transaction
+      const thirdwebClaimUnstakedTx = prepareTransaction({
+        to: claimUnstakedTxData.to,
+        data: claimUnstakedTxData.data,
+        gas: claimUnstakedTxData.gasLimit,
+        value: claimUnstakedTxData.value || 0n,
+        chain: mainnet,
+        client: client
+      });
+      
+      // Send claim unstaked transaction
+      sendTransaction(thirdwebClaimUnstakedTx);
+      
+      // Wait for transaction hash
+      let claimUnstakedWaitAttempts = 0;
+      let claimUnstakedTxHash = null;
+      
+      while (!claimUnstakedTxHash && claimUnstakedWaitAttempts < 30) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (txResult?.transactionHash) {
+          claimUnstakedTxHash = txResult.transactionHash;
+          console.log('✅ Claim unstaked transaction hash:', claimUnstakedTxHash);
+          break;
+        }
+        claimUnstakedWaitAttempts++;
+      }
+      
+      if (claimUnstakedTxHash) {
+        // Wait for claim unstaked transaction to complete
+        let isLoading = true;
+        let loadingAttempts = 0;
+        while (isLoading && loadingAttempts < 20) {
+          try {
+            isLoading = await polygonSDK.isTransactionLoading(claimUnstakedTxHash);
+            if (isLoading) {
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              loadingAttempts++;
+            }
+          } catch (loadingError) {
+            break;
+          }
+        }
+        
+        // Refresh balances after claim
+        await refreshBalances();
+        
+        return { 
+          success: true, 
+          message: `Successfully claimed ${unbondingAmount} unstaked POL!`,
+          transactionHash: claimUnstakedTxHash
+        };
+      } else {
+        // Fallback: Check if claiming actually worked by checking balance changes
+        console.log('⚠️ No claim unstaked hash detected, checking if claiming succeeded via balance...');
+        
+        const originalUnbondingBalance = parseFloat(balances.unbonding);
+        
+        // Wait for blockchain to update
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        await refreshBalances();
+        
+        // Check if unbonding amount decreased
+        const newUnbondingBalance = await getUnbondAmount();
+        const newUnbondingNum = parseFloat(newUnbondingBalance);
+        
+        if (newUnbondingNum < originalUnbondingBalance) {
+          return { 
+            success: true, 
+            message: `Successfully claimed ${unbondingAmount} unstaked POL! (Transaction completed but hash not captured)`,
+            transactionHash: 'Transaction completed successfully'
+          };
+        } else {
+          return { 
+            success: false, 
+            message: 'Claim unstaked transaction failed - no balance changes detected'
+          };
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Claim unstaked process failed:', error);
+      setError(error.message);
+      
+      let userMessage = error.message;
+      if (error.message.includes('insufficient funds')) {
+        userMessage = 'Insufficient ETH for gas fees. You need ETH for transaction fees.';
+      } else if (error.message.includes('network')) {
+        userMessage = 'Network error. Please check your connection and try again.';
       }
       
       return { success: false, message: userMessage };
@@ -572,132 +790,8 @@ export const useEverstakeStaking = (wallet, client, currentChain) => {
     }
   };
 
-// Claim unstaked POL tokens (after unbonding period)
-  const claimUnstakedPOL = async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      if (!walletAddress) throw new Error('No wallet connected');
-      
-      // Must be on Ethereum to claim unstaked
-      if (currentChain !== 'ethereum') {
-        throw new Error('Please switch to Ethereum mainnet to claim unstaked POL');
-      }
-      
-      const unbondingAmount = parseFloat(balances.unbonding);
-      
-      if (unbondingAmount <= 0) {
-        throw new Error('No unstaked POL available to claim');
-      }
-      
-      // Ensure we're on Ethereum mainnet
-      try {
-        await wallet.switchChain(mainnet);
-      } catch (chainError) {
-        console.warn('Chain switch failed or not needed:', chainError);
-      }
-      
-      // Prepare claim unstaked transaction using SDK
-      const claimUnstakedTxData = await polygonSDK.claimUndelegate(
-        walletAddress, // address: user's address
-        true          // isPOL: true for POL token
-      );
-      
-      // Convert to Thirdweb transaction
-      const thirdwebClaimUnstakedTx = prepareTransaction({
-        to: claimUnstakedTxData.to,
-        data: claimUnstakedTxData.data,
-        gas: claimUnstakedTxData.gasLimit,
-        value: claimUnstakedTxData.value || 0n,
-        chain: mainnet,
-        client: client
-      });
-      
-      // Send claim unstaked transaction
-      sendTransaction(thirdwebClaimUnstakedTx);
-      
-      // Wait for transaction hash
-      let claimUnstakedWaitAttempts = 0;
-      let claimUnstakedTxHash = null;
-      
-      while (!claimUnstakedTxHash && claimUnstakedWaitAttempts < 30) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        if (txResult?.transactionHash) {
-          claimUnstakedTxHash = txResult.transactionHash;
-          break;
-        }
-        claimUnstakedWaitAttempts++;
-      }
-      
-      if (claimUnstakedTxHash) {
-        // Wait for claim unstaked transaction to complete
-        let isLoading = true;
-        let loadingAttempts = 0;
-        while (isLoading && loadingAttempts < 20) {
-          try {
-            isLoading = await polygonSDK.isTransactionLoading(claimUnstakedTxHash);
-            if (isLoading) {
-              await new Promise(resolve => setTimeout(resolve, 3000));
-              loadingAttempts++;
-            }
-          } catch (loadingError) {
-            break;
-          }
-        }
-        
-        // Refresh balances after claim
-        await refreshBalances();
-        
-        return { 
-          success: true, 
-          message: `Successfully claimed ${unbondingAmount} unstaked POL!`,
-          transactionHash: claimUnstakedTxHash
-        };
-      } else {
-        // Fallback: Check if claiming actually worked by checking balance changes
-        console.log('⚠️ No claim unstaked hash detected, checking if claiming succeeded via balance...');
-        
-        const originalUnbondingBalance = parseFloat(balances.unbonding);
-        
-        // Wait for blockchain to update
-        await new Promise(resolve => setTimeout(resolve, 10000));
-        await refreshBalances();
-        
-        // Check if unbonding amount decreased
-        const newUnbondingBalance = await getUnbondAmount();
-        const newUnbondingNum = parseFloat(newUnbondingBalance);
-        
-        if (newUnbondingNum < originalUnbondingBalance) {
-          return { 
-            success: true, 
-            message: `Successfully claimed ${unbondingAmount} unstaked POL! (Transaction completed but hash not captured)`,
-            transactionHash: 'Transaction completed successfully'
-          };
-        } else {
-          return { 
-            success: false, 
-            message: 'Claim unstaked transaction failed - no balance changes detected'
-          };
-        }
-      }
-      
-    } catch (error) {
-      console.error('❌ Claim unstaked process failed:', error);
-      setError(error.message);
-      
-      let userMessage = error.message;
-      if (error.message.includes('insufficient funds')) {
-        userMessage = 'Insufficient ETH for gas fees. You need ETH for transaction fees.';
-      } else if (error.message.includes('user rejected')) {
-        userMessage = 'Transaction was cancelled by user.';
-      }
-      
-      return { success: false, message: userMessage };
-    } finally {
-      setIsLoading(false);
-    }
-  };
+// Claim unstaked POL tokens (after unbonding period) - FIXED to follow working pattern
+ 
 
   // Refresh all balances
   const refreshBalances = async () => {
