@@ -7,6 +7,7 @@ import { useEverstakeStaking } from '../hooks/useEverstakeStaking.jsx';
 import { useNetworkDetection } from '../hooks/useNetworkDetection.js';
 import ChainSwitchNotification from './ui/ChainSwitchNotification.jsx';
 import NetworkSwitcher from './ui/NetworkSwitcher.jsx';
+import { UNICORN_CONFIG, EVERSTAKE_CONFIG, APP_CONFIG } from '../utils/constants.js';
 
 const UnicornPOLStaking = ({ client }) => {
   const wallet = useActiveWallet();
@@ -17,11 +18,11 @@ const UnicornPOLStaking = ({ client }) => {
   const [unstakeAmount, setUnstakeAmount] = useState(''); // NEW: Add unstake amount state
   const [statusMessage, setStatusMessage] = useState('');
 
-  // Configure Unicorn smart account wallets - DEFAULT TO MAINNET
+  // Configure Unicorn smart account wallets - Using environment variables
   const wallets = [
     inAppWallet({
       smartAccount: {
-        factoryAddress: "0xD771615c873ba5a2149D5312448cE01D677Ee48A",
+        factoryAddress: UNICORN_CONFIG.FACTORY_ADDRESS,
         chain: mainnet,
         gasless: true,
       }
@@ -164,10 +165,10 @@ const UnicornPOLStaking = ({ client }) => {
               <Zap size={40} color="white" />
             </div>
             <h1 style={{ fontSize: '2.5rem', margin: '0 0 1rem 0' }}>
-              🦄 Unicorn POL Staking
+              🦄 {APP_CONFIG.NAME}
             </h1>
             <p style={{ opacity: 0.8, margin: '0 0 2rem 0' }}>
-              Stake POL with Everstake's 0% fee validator
+              {APP_CONFIG.DESCRIPTION}
             </p>
           </div>
 
@@ -435,7 +436,7 @@ const UnicornPOLStaking = ({ client }) => {
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1rem', opacity: 0.8 }}>Unbonding POL</h3>
                   <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.6 }}>
-                    Available to claim
+                    In unbonding period
                   </p>
                 </div>
               </div>
@@ -443,7 +444,7 @@ const UnicornPOLStaking = ({ client }) => {
                 {isLoading ? '...' : `${parseFloat(balances.unbonding || '0').toFixed(4)} POL`}
               </div>
               <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>
-                Unbonding period completed
+                Unbonding for ~3-4 days
               </div>
             </div>
           )}
@@ -780,7 +781,7 @@ const UnicornPOLStaking = ({ client }) => {
                   {parseFloat(balances.unbonding || '0').toFixed(6)} POL
                 </div>
                 <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>
-                  Unbonded POL ready to claim
+                  Currently in unbonding period
                 </div>
               </div>
 
@@ -788,31 +789,25 @@ const UnicornPOLStaking = ({ client }) => {
 
               <button
                 onClick={handleClaimUnstaked}
-                disabled={isLoading || parseFloat(balances.unbonding || '0') <= 0 || currentChain !== 'ethereum'}
+                disabled={true} // Always disabled for now since in unbonding period
                 style={{
                   width: '100%',
-                  background: isLoading || parseFloat(balances.unbonding || '0') <= 0 || currentChain !== 'ethereum'
-                    ? 'rgba(107, 114, 128, 0.5)'
-                    : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  background: 'rgba(107, 114, 128, 0.5)',
                   border: 'none',
                   borderRadius: '12px',
                   padding: '1rem',
                   color: 'white',
                   fontSize: '1rem',
                   fontWeight: '600',
-                  cursor: isLoading || parseFloat(balances.unbonding || '0') <= 0 || currentChain !== 'ethereum' ? 'not-allowed' : 'pointer',
+                  cursor: 'not-allowed',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '0.5rem'
                 }}
               >
-                {isLoading ? (
-                  <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} />
-                ) : (
-                  <Clock size={20} />
-                )}
-                {isLoading ? 'Claiming...' : 'Claim Unstaked POL'}
+                <Clock size={20} />
+                Waiting for Unbonding Period
               </button>
 
               <div style={{ 
@@ -824,13 +819,13 @@ const UnicornPOLStaking = ({ client }) => {
                 opacity: 0.8
               }}>
                 <div style={{ marginBottom: '0.5rem' }}>
-                  <strong>Note:</strong>
+                  <strong>Unbonding Period Info:</strong>
                 </div>
                 <ul style={{ margin: 0, paddingLeft: '1rem' }}>
-                  <li>Unbonding period is complete</li>
-                  <li>Tokens are ready to claim to your wallet</li>
-                  <li>Must be on Ethereum mainnet to claim</li>
-                  <li>Gas fees covered by Unicorn smart account</li>
+                  <li>POL must remain unbonded for approximately 3-4 days</li>
+                  <li>This is a security feature of Polygon staking</li>
+                  <li>Your POL is safe and will be claimable after the period</li>
+                  <li>Check back in a few days to claim your unstaked POL</li>
                 </ul>
               </div>
             </div>
@@ -846,7 +841,7 @@ const UnicornPOLStaking = ({ client }) => {
           border: '1px solid rgba(255, 255, 255, 0.2)'
         }}>
           <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.3rem' }}>
-            🌟 About POL Staking with Everstake
+            🌟 About POL Staking with {EVERSTAKE_CONFIG.VALIDATOR_NAME}
           </h3>
           
           <div style={{ 
@@ -858,13 +853,13 @@ const UnicornPOLStaking = ({ client }) => {
           }}>
             <div>
               <strong>Validator:</strong><br/>
-              Everstake (0% commission)<br/>
-              Address: 0xe483c7f156b25da9be6220049e5111bb41c4c535
+              {EVERSTAKE_CONFIG.VALIDATOR_NAME} (0% commission)<br/>
+              Address: {EVERSTAKE_CONFIG.VALIDATOR_ADDRESS}
             </div>
             <div>
               <strong>APY:</strong><br/>
               ~4.1% annual percentage yield<br/>
-              Rewards distributed every ~34 minutes
+              Rewards distributed every ~{EVERSTAKE_CONFIG.REWARD_FREQUENCY_MINUTES} minutes
             </div>
             <div>
               <strong>Network:</strong><br/>
@@ -872,8 +867,13 @@ const UnicornPOLStaking = ({ client }) => {
               Polygon for balance checking
             </div>
             <div>
+              <strong>Unstaking:</strong><br/>
+              3-4 day unbonding period<br/>
+              POL remains safe during unbonding
+            </div>
+            <div>
               <strong>Wallet:</strong><br/>
-              Unicorn smart account<br/>
+              {APP_CONFIG.COMPANY_NAME} smart account<br/>
               Gasless transactions enabled
             </div>
           </div>
